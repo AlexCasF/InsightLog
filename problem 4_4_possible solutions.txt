@@ -1,0 +1,62 @@
+
+
+4. problem code location 276
+
+            except (IOError, EnvironmentError) as e:
+                print(e.strerror)
+                return None
+
+fix option
+
+	except (IOError, EnvironmentError) as e:
+    		print(e.strerror)
+    		return []
+
+
+more proffesional
+
+except (IOError, EnvironmentError) as e:
+    raise FileNotFoundError(f"Log file not found: {filepath}") from e
+
+
+added new print to   277
+
+print("DEBUG: File error happened here")
+
+===========================
+
+5. problem code location  62 / 212
+
+		IPv4_REGEX = r'(\d+.\d+.\d+.\d+)'
+
+fix option
+
+		IPv4_REGEX = r'(\d+\.\d+\.\d+\.\d+)'
+
+best choice full correction
+
+IPv4_REGEX = r'\b((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b'
+
+
+Python built-in validation:
+
+import ipaddress
+
+def extract_ip(text):
+    for word in text.split():
+        try:
+            return str(ipaddress.IPv4Address(word))
+        except:
+            continue
+    return None
+
+
+
+git clone --branch test-group-a https://github.com/AlexCasF/InsightLog.git
+
+
+
+
+
+
+	

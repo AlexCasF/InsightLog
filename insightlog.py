@@ -59,9 +59,10 @@ SERVICES_SWITCHER = {
     'auth': DEFAULT_AUTH
 }
 
-IPv4_REGEX = r'(\d+.\d+.\d+.\d+)'
+IPv4_REGEX = r'\b((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b'
 AUTH_USER_INVALID_USER = r'(?i)invalid\suser\s(\w+)\s'
 AUTH_PASS_INVALID_USER = r'(?i)failed\spassword\sfor\s(\w+)\s'
+
 
 
 # Validator functions
@@ -274,8 +275,9 @@ def get_requests(service, data=None, filepath=None, filters=None):
                 with open(filepath, 'r') as f:
                     filtered_data = f.read()
             except (IOError, EnvironmentError) as e:
+                print("DEBUG: File error happened here")
                 print(e.strerror)
-                return None
+                return []
         else:
             filtered_data = data
     
