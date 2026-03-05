@@ -236,16 +236,14 @@ def analyze_auth_request(request_info):
 def apply_filters(filters, data=None, filepath=None):
     """Apply all filters to data or file and return filtered results"""
     if filepath:
-        try:
-            with open(filepath, 'r') as file_object:
-                filtered_lines = []
-                for line in file_object:
-                    if check_all_matches(line, filters):
-                        filtered_lines.append(line)
-                return ''.join(filtered_lines)
-        except (IOError, EnvironmentError) as e:
-            print(e.strerror)
+        file_data = read_text_file(filepath)
+        if file_data is None:
             return None
+        filtered_lines = []
+        for line in file_data.splitlines(True):
+            if check_all_matches(line, filters):
+                filtered_lines.append(line)
+        return ''.join(filtered_lines)
     elif data:
         filtered_lines = []
         for line in data.splitlines():
