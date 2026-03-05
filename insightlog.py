@@ -1,5 +1,6 @@
 import re
 import calendar
+import chardet
 from datetime import datetime
 
 # Service settings
@@ -89,6 +90,17 @@ def is_valid_minute(minute):
     """Check if minute value is valid"""
     return (minute == '*') or (59 >= minute >= 0)
 
+# Helper function to check encoding of file before opening, instead of just open in UTF-8 by default
+def read_text_file(filepath):
+    try:
+        with open(filepath, "rb") as f:
+            raw_data = f.read()
+            result = chardet.detect(raw_data)
+            encoding = result["encoding"]
+        with open(filepath, "r", encoding=encoding) as f:
+            return f.read()
+    except (FileNotFoundError, UnicodeDecodeError):
+        return None
 
 # Utility functions
 def get_service_settings(service_name):
