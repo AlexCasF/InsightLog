@@ -148,15 +148,13 @@ def filter_data(log_filter, data=None, filepath=None, is_casesensitive=True, is_
     """Filter received data/file content and return the results"""
     return_data = ""
     if filepath:
-        try:
-            with open(filepath, 'r') as file_object:
-                for line in file_object:
-                    if check_match(line, log_filter, is_regex, is_casesensitive, is_reverse):
-                        return_data += line
-            return return_data
-        except (IOError, EnvironmentError) as e:
-            print(e.strerror)
+        file_data = read_text_file(filepath)
+        if file_data is None:
             return None
+        for line in file_data.splitlines(True):
+            if check_match(line, log_filter, is_regex, is_casesensitive, is_reverse):
+                return_data += line
+        return return_data
     elif data:
         for line in data.splitlines():
             if check_match(line, log_filter, is_regex, is_casesensitive, is_reverse):
