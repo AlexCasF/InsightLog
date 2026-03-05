@@ -278,11 +278,8 @@ def get_requests(service, data=None, filepath=None, filters=None):
         filtered_data = apply_filters(filters, data=data, filepath=filepath)
     else:
         if filepath:
-            try:
-                with open(filepath, 'r') as f:
-                    filtered_data = f.read()
-            except (IOError, EnvironmentError) as e:
-                print(e.strerror)
+            filtered_data = read_text_file(filepath)
+            if filtered_data is None:
                 return None
         else:
             filtered_data = data
