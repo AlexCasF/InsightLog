@@ -1,4 +1,5 @@
 import os
+import tempfile
 from unittest import TestCase
 from datetime import datetime
 from insightlog import *
@@ -109,5 +110,53 @@ class TestInsightLog(TestCase):
         ]
         requests = get_requests('nginx', filepath=nginx_logfile, filters=nginx_filters)
         self.assertEqual(len(requests), 2, "get_requests#2")
+
+    def test_read_text_file_non_utf8_fallbacks(self):
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        latin1_file = os.path.join(base_dir, 'logs-samples/non-utf-8/nginx_nonutf8_latin1.sample')
+        cp1252_file = os.path.join(base_dir, 'logs-samples/non-utf-8/nginx_nonutf8_cp1252.sample')
+        auth_cp1252_file = os.path.join(base_dir, 'logs-samples/non-utf-8/auth_nonutf8_cp1252.sample')
+
+        latin1_data = read_text_file(latin1_file)
+        self.assertTrue(latin1_data is not None, "read_text_file_non_utf8#1")
+        self.assertTrue('café-browser' in latin1_data, "read_text_file_non_utf8#2")
+        self.assertTrue('agent-ñ' in latin1_data, "read_text_file_non_utf8#3")
+
+        cp1252_data = read_text_file(cp1252_file)
+        self.assertTrue(cp1252_data is not None, "read_text_file_non_utf8#4")
+        self.assertTrue('Mozilla “Legacy”' in cp1252_data, "read_text_file_non_utf8#5")
+        self.assertTrue('cost-€-client' in cp1252_data, "read_text_file_non_utf8#6")
+
+        auth_cp1252_data = read_text_file(auth_cp1252_file)
+        self.assertTrue(auth_cp1252_data is not None, "read_text_file_non_utf8#7")
+        self.assertTrue('– legacy' in auth_cp1252_data, "read_text_file_non_utf8#8")
+        self.assertTrue('“old client”' in auth_cp1252_data, "read_text_file_non_utf8#9")
+
+    def test_get_requests_with_utf8_sig_and_cp1252(self):
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cp1252_file = os.path.join(base_dir, 'logs-samples/non-utf-8/nginx_nonutf8_cp1252.sample')
+
+        cp1252_filters = [
+            {'filter_pattern': '127.0.0.3', 'is_casesensitive': True, 'is_regex': False, 'is_reverse': False}
+        ]
+        cp1252_requests = get_requests('nginx', filepath=cp1252_file, filters=cp1252_filters)
+        self.assertEqual(len(cp1252_requests), 1, "get_requests_non_utf8#1")
+        self.assertEqual(cp1252_requests[0]['USERAGENT'], 'Mozilla “Legacy”', "get_requests_non_utf8#2")
+
+        with tempfile.NamedTemporaryFile('wb', suffix='.sample', delete=False) as tmp_file:
+            tmp_file.write(
+                '127.0.0.9 - - [24/Apr/2016:06:30:37 +0000] "GET / HTTP/1.1" 200 612 "-" "utf8sig-café"\n'
+                .encode('utf-8-sig')
+            )
+            utf8sig_path = tmp_file.name
+        try:
+            utf8sig_filters = [
+                {'filter_pattern': '127.0.0.9', 'is_casesensitive': True, 'is_regex': False, 'is_reverse': False}
+            ]
+            utf8sig_requests = get_requests('nginx', filepath=utf8sig_path, filters=utf8sig_filters)
+            self.assertEqual(len(utf8sig_requests), 1, "get_requests_non_utf8#3")
+            self.assertEqual(utf8sig_requests[0]['USERAGENT'], 'utf8sig-café', "get_requests_non_utf8#4")
+        finally:
+            os.remove(utf8sig_path)
 
 # TODO: Add more tests for edge cases and error handling

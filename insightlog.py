@@ -95,11 +95,32 @@ def read_text_file(filepath):
     try:
         with open(filepath, "rb") as f:
             raw_data = f.read()
-            result = chardet.detect(raw_data)
-            encoding = result["encoding"]
-        with open(filepath, "r", encoding=encoding) as f:
-            return f.read()
-    except (FileNotFoundError, UnicodeDecodeError):
+        if not raw_data:
+            return ""
+
+        # Use a deterministic decode chain to avoid brittle single-shot detection.
+        preferred_encodings = ["utf-8", "utf-8-sig"]
+        detected = chardet.detect(raw_data) or {}
+        detected_encoding = detected.get("encoding")
+        detected_confidence = detected.get("confidence") or 0.0
+
+        candidate_encodings = list(preferred_encodings)
+        if detected_encoding and detected_confidence >= 0.70:
+            candidate_encodings.append(detected_encoding)
+        candidate_encodings.extend(["cp1252", "latin-1"])
+
+        seen = set()
+        for encoding in candidate_encodings:
+            normalized = encoding.lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            try:
+                return raw_data.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return None
+    except (FileNotFoundError, OSError):
         return None
 
 # Utility functions
