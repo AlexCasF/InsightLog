@@ -98,10 +98,10 @@ def get_service_settings(service_name):
     else:
         raise Exception("Service \""+service_name+"\" doesn't exists!")
 
-
-def get_date_filter(settings, minute=datetime.now().minute, hour=datetime.now().hour,
-                    day=datetime.now().day, month=datetime.now().month,
-                    year=datetime.now().year):
+# Changed the default to None and set default value later to not trigger a type mismatch (logic in Line 110-114)
+def get_date_filter(settings, minute=None, hour=None,
+                    day=None, month=None,
+                    year=None):
     """Get the date pattern that can be used to filter data from logs based on the params"""
     if not is_valid_year(year) or not is_valid_month(month) or not is_valid_day(day) \
             or not is_valid_hour(hour) or not is_valid_minute(minute):
