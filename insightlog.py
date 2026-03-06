@@ -98,10 +98,22 @@ def get_service_settings(service_name):
     else:
         raise Exception("Service \""+service_name+"\" doesn't exists!")
 
-# Changed the default to None and set default value later to not trigger a type mismatch (logic in Line 110-114)
+# Changed the default to None and set default value later to not trigger a type mismatch (logic in Line 106-115)
 def get_date_filter(settings, minute=None, hour=None,
                     day=None, month=None,
                     year=None):
+    
+# setting the variable now to datetime.now for easier usage later 
+    now = datetime.now()
+# All of this are if statements. For example:
+# Set minute to now.minute if no argument is given (None).
+# Else, set the value to the original arguments given to the function
+    minute = now.minute if minute is None else minute
+    hour = now.hour if hour is None else hour
+    day = now.day if day is None else day
+    month = now.month if month is None else month
+    year = now.year if year is None else year
+
     """Get the date pattern that can be used to filter data from logs based on the params"""
     if not is_valid_year(year) or not is_valid_month(month) or not is_valid_day(day) \
             or not is_valid_hour(hour) or not is_valid_minute(minute):
