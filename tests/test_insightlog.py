@@ -52,6 +52,36 @@ class TestInsightLog(TestCase):
         data = filter_data('120.25.229.167', filepath=file_name, is_reverse=True)
         self.assertFalse('120.25.229.167' in data, "filter_data#4")
 
+    def test_log_level_helpers(self):
+        web_info = {'CODE': '200'}
+        web_warning = {'CODE': '404'}
+        web_error = {'CODE': '503'}
+        web_invalid = {'CODE': 'invalid'}
+
+        self.assertEqual(get_log_level('nginx', web_info), LOG_LEVEL_INFO, "log_level#1")
+        self.assertEqual(get_log_level('apache2', web_warning), LOG_LEVEL_WARNING, "log_level#2")
+        self.assertEqual(get_log_level('nginx', web_error), LOG_LEVEL_ERROR, "log_level#3")
+        self.assertEqual(get_log_level('nginx', web_invalid), LOG_LEVEL_INFO, "log_level#4")
+
+        auth_warning = {'IS_PREAUTH': True}
+        auth_error = {'INVALID_PASS_USER': 'root'}
+        auth_info = {'IS_PREAUTH': False, 'INVALID_USER': None, 'INVALID_PASS_USER': None, 'IS_CLOSED': False}
+
+        self.assertEqual(get_log_level('auth', auth_warning), LOG_LEVEL_WARNING, "log_level#5")
+        self.assertEqual(get_log_level('auth', auth_error), LOG_LEVEL_ERROR, "log_level#6")
+        self.assertEqual(get_log_level('auth', auth_info), LOG_LEVEL_INFO, "log_level#7")
+
+        mixed_requests = [
+            {'CODE': '200', 'ID': 1},
+            {'CODE': '404', 'ID': 2},
+            {'CODE': '503', 'ID': 3},
+        ]
+        warning_only = filter_requests_by_level(mixed_requests, 'nginx', LOG_LEVEL_WARNING)
+        self.assertEqual(len(warning_only), 1, "log_level#8")
+        self.assertEqual(warning_only[0]['ID'], 2, "log_level#9")
+        no_filter = filter_requests_by_level(mixed_requests, 'nginx', None)
+        self.assertEqual(len(no_filter), 3, "log_level#10")
+
     def test_get_web_requests(self):
         nginx_settings = get_service_settings('nginx')
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

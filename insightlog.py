@@ -62,6 +62,10 @@ SERVICES_SWITCHER = {
 IPv4_REGEX = r'(\d+.\d+.\d+.\d+)'
 AUTH_USER_INVALID_USER = r'(?i)invalid\suser\s(\w+)\s'
 AUTH_PASS_INVALID_USER = r'(?i)failed\spassword\sfor\s(\w+)\s'
+LOG_LEVEL_INFO = 'info'
+LOG_LEVEL_WARNING = 'warning'
+LOG_LEVEL_ERROR = 'error'
+LOG_LEVEL_CHOICES = [LOG_LEVEL_INFO, LOG_LEVEL_WARNING, LOG_LEVEL_ERROR]
 
 
 # Validator functions
@@ -222,6 +226,36 @@ def analyze_auth_request(request_info):
             'IS_CLOSED': is_closed}
 
 
+def get_log_level(service, request):
+    """Infer a normalized log level from a parsed request."""
+    if service in ('nginx', 'apache2'):
+        try:
+            code = int(request.get('CODE', 0))
+        except (TypeError, ValueError):
+            return LOG_LEVEL_INFO
+        if 500 <= code:
+            return LOG_LEVEL_ERROR
+        if 400 <= code:
+            return LOG_LEVEL_WARNING
+        return LOG_LEVEL_INFO
+
+    if service == 'auth':
+        if request.get('INVALID_USER') or request.get('INVALID_PASS_USER') or request.get('IS_CLOSED'):
+            return LOG_LEVEL_ERROR
+        if request.get('IS_PREAUTH'):
+            return LOG_LEVEL_WARNING
+        return LOG_LEVEL_INFO
+
+    return LOG_LEVEL_INFO
+
+
+def filter_requests_by_level(requests, service, log_level):
+    """Filter parsed requests by inferred log level."""
+    if not log_level:
+        return requests
+    return [request for request in requests if get_log_level(service, request) == log_level]
+
+
 # Simplified analyzer functions (replacing the class)
 def apply_filters(filters, data=None, filepath=None):
     """Apply all filters to data or file and return filtered results"""
@@ -303,6 +337,8 @@ if __name__ == '__main__':
     parser.add_argument('--service', required=True, choices=['nginx', 'apache2', 'auth'], help='Type of log to analyze')
     parser.add_argument('--logfile', required=True, help='Path to the log file')
     parser.add_argument('--filter', required=False, default=None, help='String to filter log lines')
+    parser.add_argument('--log-level', required=False, choices=LOG_LEVEL_CHOICES,
+                        help='Filter parsed requests by inferred log level')
     args = parser.parse_args()
 
     filters = []
@@ -311,6 +347,7 @@ if __name__ == '__main__':
     
     requests = get_requests(args.service, filepath=args.logfile, filters=filters)
     if requests:
+        requests = filter_requests_by_level(requests, args.service, args.log_level)
         for req in requests:
             print(req)
 
