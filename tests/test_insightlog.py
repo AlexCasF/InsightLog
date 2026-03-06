@@ -1,4 +1,5 @@
 import os
+import json
 from unittest import TestCase
 from datetime import datetime
 from insightlog import *
@@ -51,6 +52,13 @@ class TestInsightLog(TestCase):
         self.assertEqual(len(data.split("\n")), 19, "filter_data#3")
         data = filter_data('120.25.229.167', filepath=file_name, is_reverse=True)
         self.assertFalse('120.25.229.167' in data, "filter_data#4")
+
+    def test_check_match_regex_search_behavior(self):
+        self.assertTrue(check_match("abc123def", r"\d+", is_regex=True), "check_match#1")
+        self.assertFalse(check_match("abc123def", r"^\d+", is_regex=True), "check_match#2")
+        self.assertTrue(check_match("abcABCdef", r"abc", is_regex=True, is_casesensitive=False), "check_match#3")
+        filtered_data = filter_data(r"\d+", data="prefix 42 suffix", is_regex=True)
+        self.assertEqual(filtered_data, "prefix 42 suffix\n", "check_match#4")
 
     def test_log_level_helpers(self):
         web_info = {'CODE': '200'}
@@ -105,6 +113,24 @@ class TestInsightLog(TestCase):
         self.assertEqual(len(only_from), 2, "time_range#6")
         self.assertRaises(ValueError, filter_requests_by_time_range,
                           requests, time_to, time_from)
+
+    def test_output_format_helpers(self):
+        requests = [
+            {'DATETIME': '2016-04-24 06:26:37', 'IP': '127.0.0.1', 'CODE': '200'},
+            {'DATETIME': '2016-04-24 06:27:37', 'IP': '127.0.0.2', 'CODE': '404'},
+        ]
+        json_output = format_requests_as_json(requests)
+        parsed_json = json.loads(json_output)
+        self.assertEqual(len(parsed_json), 2, "output_format#1")
+        self.assertEqual(parsed_json[1]['CODE'], '404', "output_format#2")
+
+        csv_output = format_requests_as_csv(requests)
+        csv_lines = [line for line in csv_output.splitlines() if line]
+        self.assertEqual(len(csv_lines), 3, "output_format#3")
+        self.assertTrue('DATETIME' in csv_lines[0], "output_format#4")
+        self.assertTrue('127.0.0.2' in csv_lines[2], "output_format#5")
+        self.assertEqual(format_requests_as_csv([]), '', "output_format#6")
+        self.assertEqual(json.loads(format_requests_as_json([])), [], "output_format#7")
 
     def test_get_web_requests(self):
         nginx_settings = get_service_settings('nginx')

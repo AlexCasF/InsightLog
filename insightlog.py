@@ -1,5 +1,8 @@
 import re
 import calendar
+import csv
+import io
+import json
 from datetime import datetime
 
 # Service settings
@@ -67,6 +70,10 @@ LOG_LEVEL_WARNING = 'warning'
 LOG_LEVEL_ERROR = 'error'
 LOG_LEVEL_CHOICES = [LOG_LEVEL_INFO, LOG_LEVEL_WARNING, LOG_LEVEL_ERROR]
 TIME_RANGE_FORMAT = '%Y-%m-%d %H:%M:%S'
+OUTPUT_FORMAT_TEXT = 'text'
+OUTPUT_FORMAT_JSON = 'json'
+OUTPUT_FORMAT_CSV = 'csv'
+OUTPUT_FORMAT_CHOICES = [OUTPUT_FORMAT_TEXT, OUTPUT_FORMAT_JSON, OUTPUT_FORMAT_CSV]
 
 
 # Validator functions
@@ -128,8 +135,8 @@ def get_date_filter(settings, minute=datetime.now().minute, hour=datetime.now().
 def check_match(line, filter_pattern, is_regex=False, is_casesensitive=True, is_reverse=False):
     """Check if line contains/matches filter pattern"""
     if is_regex:
-        check_result = re.match(filter_pattern, line) if is_casesensitive \
-            else re.match(filter_pattern, line, re.IGNORECASE)
+        check_result = re.search(filter_pattern, line) if is_casesensitive \
+            else re.search(filter_pattern, line, re.IGNORECASE)
     else:
         check_result = (filter_pattern in line) if is_casesensitive else (filter_pattern.lower() in line.lower())
     if is_reverse:
@@ -286,6 +293,29 @@ def filter_requests_by_time_range(requests, time_from=None, time_to=None):
     return filtered_requests
 
 
+def format_requests_as_json(requests):
+    """Format parsed requests as JSON text."""
+    return json.dumps(requests, indent=2, ensure_ascii=False)
+
+
+def format_requests_as_csv(requests):
+    """Format parsed requests as CSV text."""
+    if not requests:
+        return ''
+
+    fieldnames = list(requests[0].keys())
+    for request in requests[1:]:
+        for key in request.keys():
+            if key not in fieldnames:
+                fieldnames.append(key)
+
+    out_buffer = io.StringIO()
+    writer = csv.DictWriter(out_buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(requests)
+    return out_buffer.getvalue()
+
+
 # Simplified analyzer functions (replacing the class)
 def apply_filters(filters, data=None, filepath=None):
     """Apply all filters to data or file and return filtered results"""
@@ -373,6 +403,8 @@ if __name__ == '__main__':
                         help='Start datetime (inclusive), format: YYYY-MM-DD HH:MM:SS')
     parser.add_argument('--time-to', required=False, default=None,
                         help='End datetime (inclusive), format: YYYY-MM-DD HH:MM:SS')
+    parser.add_argument('--output-format', required=False, default=OUTPUT_FORMAT_TEXT, choices=OUTPUT_FORMAT_CHOICES,
+                        help='Output format: text, json, or csv')
     args = parser.parse_args()
 
     try:
@@ -389,9 +421,14 @@ if __name__ == '__main__':
         filters.append({'filter_pattern': args.filter, 'is_casesensitive': True, 'is_regex': False, 'is_reverse': False})
     
     requests = get_requests(args.service, filepath=args.logfile, filters=filters)
-    if requests:
+    if requests is not None:
         requests = filter_requests_by_level(requests, args.service, args.log_level)
         requests = filter_requests_by_time_range(requests, time_from, time_to)
-        for req in requests:
-            print(req)
+        if args.output_format == OUTPUT_FORMAT_JSON:
+            print(format_requests_as_json(requests))
+        elif args.output_format == OUTPUT_FORMAT_CSV:
+            print(format_requests_as_csv(requests), end='')
+        else:
+            for req in requests:
+                print(req)
 
