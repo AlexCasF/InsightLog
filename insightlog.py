@@ -66,6 +66,7 @@ LOG_LEVEL_INFO = 'info'
 LOG_LEVEL_WARNING = 'warning'
 LOG_LEVEL_ERROR = 'error'
 LOG_LEVEL_CHOICES = [LOG_LEVEL_INFO, LOG_LEVEL_WARNING, LOG_LEVEL_ERROR]
+TIME_RANGE_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 
 # Validator functions
@@ -256,6 +257,35 @@ def filter_requests_by_level(requests, service, log_level):
     return [request for request in requests if get_log_level(service, request) == log_level]
 
 
+def parse_datetime_value(value):
+    """Parse datetime string used by parsed requests and CLI time-range arguments."""
+    return datetime.strptime(value, TIME_RANGE_FORMAT)
+
+
+def filter_requests_by_time_range(requests, time_from=None, time_to=None):
+    """Filter parsed requests by DATETIME range (inclusive)."""
+    if not time_from and not time_to:
+        return requests
+    if time_from and time_to and time_from > time_to:
+        raise ValueError("time_from must be less than or equal to time_to")
+
+    filtered_requests = []
+    for request in requests:
+        request_datetime = request.get('DATETIME')
+        if not request_datetime:
+            continue
+        try:
+            parsed_datetime = parse_datetime_value(request_datetime)
+        except ValueError:
+            continue
+        if time_from and parsed_datetime < time_from:
+            continue
+        if time_to and parsed_datetime > time_to:
+            continue
+        filtered_requests.append(request)
+    return filtered_requests
+
+
 # Simplified analyzer functions (replacing the class)
 def apply_filters(filters, data=None, filepath=None):
     """Apply all filters to data or file and return filtered results"""
@@ -339,7 +369,20 @@ if __name__ == '__main__':
     parser.add_argument('--filter', required=False, default=None, help='String to filter log lines')
     parser.add_argument('--log-level', required=False, choices=LOG_LEVEL_CHOICES,
                         help='Filter parsed requests by inferred log level')
+    parser.add_argument('--time-from', required=False, default=None,
+                        help='Start datetime (inclusive), format: YYYY-MM-DD HH:MM:SS')
+    parser.add_argument('--time-to', required=False, default=None,
+                        help='End datetime (inclusive), format: YYYY-MM-DD HH:MM:SS')
     args = parser.parse_args()
+
+    try:
+        time_from = parse_datetime_value(args.time_from) if args.time_from else None
+        time_to = parse_datetime_value(args.time_to) if args.time_to else None
+    except ValueError:
+        parser.error("Invalid datetime format for --time-from/--time-to. Use YYYY-MM-DD HH:MM:SS")
+
+    if time_from and time_to and time_from > time_to:
+        parser.error("--time-from must be less than or equal to --time-to")
 
     filters = []
     if args.filter:
@@ -348,6 +391,7 @@ if __name__ == '__main__':
     requests = get_requests(args.service, filepath=args.logfile, filters=filters)
     if requests:
         requests = filter_requests_by_level(requests, args.service, args.log_level)
+        requests = filter_requests_by_time_range(requests, time_from, time_to)
         for req in requests:
             print(req)
 

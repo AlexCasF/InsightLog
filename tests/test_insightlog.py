@@ -82,6 +82,30 @@ class TestInsightLog(TestCase):
         no_filter = filter_requests_by_level(mixed_requests, 'nginx', None)
         self.assertEqual(len(no_filter), 3, "log_level#10")
 
+    def test_time_range_helpers(self):
+        parsed_dt = parse_datetime_value('2016-04-24 06:26:37')
+        self.assertEqual(parsed_dt.year, 2016, "time_range#1")
+        self.assertEqual(parsed_dt.minute, 26, "time_range#2")
+        self.assertRaises(ValueError, parse_datetime_value, '2016-04-24')
+
+        requests = [
+            {'DATETIME': '2016-04-24 06:26:37', 'ID': 1},
+            {'DATETIME': '2016-04-24 06:27:37', 'ID': 2},
+            {'DATETIME': '2016-04-24 06:28:37', 'ID': 3},
+            {'DATETIME': 'bad-date', 'ID': 4},
+        ]
+        time_from = parse_datetime_value('2016-04-24 06:27:37')
+        time_to = parse_datetime_value('2016-04-24 06:28:37')
+        filtered = filter_requests_by_time_range(requests, time_from, time_to)
+        self.assertEqual(len(filtered), 2, "time_range#3")
+        self.assertEqual(filtered[0]['ID'], 2, "time_range#4")
+        self.assertEqual(filtered[1]['ID'], 3, "time_range#5")
+
+        only_from = filter_requests_by_time_range(requests, time_from=time_from)
+        self.assertEqual(len(only_from), 2, "time_range#6")
+        self.assertRaises(ValueError, filter_requests_by_time_range,
+                          requests, time_to, time_from)
+
     def test_get_web_requests(self):
         nginx_settings = get_service_settings('nginx')
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
