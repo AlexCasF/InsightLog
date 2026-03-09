@@ -52,6 +52,14 @@ class TestInsightLog(TestCase):
         data = filter_data('120.25.229.167', filepath=file_name, is_reverse=True)
         self.assertFalse('120.25.229.167' in data, "filter_data#4")
 
+    def test_check_match_regex_search_behavior(self):
+        self.assertTrue(check_match("abc123def", r"\d+", is_regex=True), "check_match_regex#1")
+        self.assertFalse(check_match("abc123def", r"^\d+", is_regex=True), "check_match_regex#2")
+        self.assertTrue(check_match("abcABCdef", r"abc", is_regex=True, is_casesensitive=False),
+                        "check_match_regex#3")
+        filtered_data = filter_data(r"\d+", data="prefix 42 suffix", is_regex=True)
+        self.assertEqual(filtered_data, "prefix 42 suffix\n", "check_match_regex#4")
+
     def test_get_web_requests(self):
         nginx_settings = get_service_settings('nginx')
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
