@@ -1,6 +1,9 @@
 import re
 import calendar
 import chardet
+import csv
+import io
+import json
 from datetime import datetime
 
 # Service settings
@@ -63,6 +66,15 @@ SERVICES_SWITCHER = {
 IPv4_REGEX = r'(\d+.\d+.\d+.\d+)'
 AUTH_USER_INVALID_USER = r'(?i)invalid\suser\s(\w+)\s'
 AUTH_PASS_INVALID_USER = r'(?i)failed\spassword\sfor\s(\w+)\s'
+LOG_LEVEL_INFO = 'info'
+LOG_LEVEL_WARNING = 'warning'
+LOG_LEVEL_ERROR = 'error'
+LOG_LEVEL_CHOICES = [LOG_LEVEL_INFO, LOG_LEVEL_WARNING, LOG_LEVEL_ERROR]
+TIME_RANGE_FORMAT = '%Y-%m-%d %H:%M:%S'
+OUTPUT_FORMAT_TEXT = 'text'
+OUTPUT_FORMAT_JSON = 'json'
+OUTPUT_FORMAT_CSV = 'csv'
+OUTPUT_FORMAT_CHOICES = [OUTPUT_FORMAT_TEXT, OUTPUT_FORMAT_JSON, OUTPUT_FORMAT_CSV]
 
 
 # Validator functions
@@ -131,10 +143,22 @@ def get_service_settings(service_name):
     else:
         raise Exception("Service \""+service_name+"\" doesn't exists!")
 
+# Changed the default to None and set default value later to not trigger a type mismatch (logic in Line 106-115)
+def get_date_filter(settings, minute=None, hour=None,
+                    day=None, month=None,
+                    year=None):
+    
+# setting the variable now to datetime.now for easier usage later 
+    now = datetime.now()
+# All of this are if statements. For example:
+# Set minute to now.minute if no argument is given (None).
+# Else, set the value to the original arguments given to the function
+    minute = now.minute if minute is None else minute
+    hour = now.hour if hour is None else hour
+    day = now.day if day is None else day
+    month = now.month if month is None else month
+    year = now.year if year is None else year
 
-def get_date_filter(settings, minute=datetime.now().minute, hour=datetime.now().hour,
-                    day=datetime.now().day, month=datetime.now().month,
-                    year=datetime.now().year):
     """Get the date pattern that can be used to filter data from logs based on the params"""
     if not is_valid_year(year) or not is_valid_month(month) or not is_valid_day(day) \
             or not is_valid_hour(hour) or not is_valid_minute(minute):
@@ -156,8 +180,8 @@ def get_date_filter(settings, minute=datetime.now().minute, hour=datetime.now().
 def check_match(line, filter_pattern, is_regex=False, is_casesensitive=True, is_reverse=False):
     """Check if line contains/matches filter pattern"""
     if is_regex:
-        check_result = re.match(filter_pattern, line) if is_casesensitive \
-            else re.match(filter_pattern, line, re.IGNORECASE)
+        check_result = re.search(filter_pattern, line) if is_casesensitive \
+            else re.search(filter_pattern, line, re.IGNORECASE)
     else:
         check_result = (filter_pattern in line) if is_casesensitive else (filter_pattern.lower() in line.lower())
     if is_reverse:
@@ -253,6 +277,88 @@ def analyze_auth_request(request_info):
             'IS_CLOSED': is_closed}
 
 
+def get_log_level(service, request):
+    """Infer a normalized log level from a parsed request."""
+    if service in ('nginx', 'apache2'):
+        try:
+            code = int(request.get('CODE', 0))
+        except (TypeError, ValueError):
+            return LOG_LEVEL_INFO
+        if 500 <= code:
+            return LOG_LEVEL_ERROR
+        if 400 <= code:
+            return LOG_LEVEL_WARNING
+        return LOG_LEVEL_INFO
+
+    if service == 'auth':
+        if request.get('INVALID_USER') or request.get('INVALID_PASS_USER') or request.get('IS_CLOSED'):
+            return LOG_LEVEL_ERROR
+        if request.get('IS_PREAUTH'):
+            return LOG_LEVEL_WARNING
+        return LOG_LEVEL_INFO
+
+    return LOG_LEVEL_INFO
+
+
+def filter_requests_by_level(requests, service, log_level):
+    """Filter parsed requests by inferred log level."""
+    if not log_level:
+        return requests
+    return [request for request in requests if get_log_level(service, request) == log_level]
+
+
+def parse_datetime_value(value):
+    """Parse datetime string used by parsed requests and CLI time-range arguments."""
+    return datetime.strptime(value, TIME_RANGE_FORMAT)
+
+
+def filter_requests_by_time_range(requests, time_from=None, time_to=None):
+    """Filter parsed requests by DATETIME range (inclusive)."""
+    if not time_from and not time_to:
+        return requests
+    if time_from and time_to and time_from > time_to:
+        raise ValueError("time_from must be less than or equal to time_to")
+
+    filtered_requests = []
+    for request in requests:
+        request_datetime = request.get('DATETIME')
+        if not request_datetime:
+            continue
+        try:
+            parsed_datetime = parse_datetime_value(request_datetime)
+        except ValueError:
+            continue
+        if time_from and parsed_datetime < time_from:
+            continue
+        if time_to and parsed_datetime > time_to:
+            continue
+        filtered_requests.append(request)
+    return filtered_requests
+
+
+def format_requests_as_json(requests):
+    """Format parsed requests as JSON text."""
+    return json.dumps(requests, indent=2, ensure_ascii=False)
+
+
+def format_requests_as_csv(requests):
+    """Format parsed requests as CSV text."""
+    if not requests:
+        return ''
+
+    fieldnames = list(requests[0].keys())
+    for request in requests[1:]:
+        for key in request.keys():
+            if key not in fieldnames:
+                fieldnames.append(key)
+
+    out_buffer = io.StringIO()
+    writer = csv.DictWriter(out_buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(requests)
+    return out_buffer.getvalue()
+
+
 # Simplified analyzer functions (replacing the class)
 def apply_filters(filters, data=None, filepath=None):
     """Apply all filters to data or file and return filtered results"""
@@ -329,14 +435,38 @@ if __name__ == '__main__':
     parser.add_argument('--service', required=True, choices=['nginx', 'apache2', 'auth'], help='Type of log to analyze')
     parser.add_argument('--logfile', required=True, help='Path to the log file')
     parser.add_argument('--filter', required=False, default=None, help='String to filter log lines')
+    parser.add_argument('--log-level', required=False, choices=LOG_LEVEL_CHOICES,
+                        help='Filter parsed requests by inferred log level')
+    parser.add_argument('--time-from', required=False, default=None,
+                        help='Start datetime (inclusive), format: YYYY-MM-DD HH:MM:SS')
+    parser.add_argument('--time-to', required=False, default=None,
+                        help='End datetime (inclusive), format: YYYY-MM-DD HH:MM:SS')
+    parser.add_argument('--output-format', required=False, default=OUTPUT_FORMAT_TEXT, choices=OUTPUT_FORMAT_CHOICES,
+                        help='Output format: text, json, or csv')
     args = parser.parse_args()
+
+    try:
+        time_from = parse_datetime_value(args.time_from) if args.time_from else None
+        time_to = parse_datetime_value(args.time_to) if args.time_to else None
+    except ValueError:
+        parser.error("Invalid datetime format for --time-from/--time-to. Use YYYY-MM-DD HH:MM:SS")
+
+    if time_from and time_to and time_from > time_to:
+        parser.error("--time-from must be less than or equal to --time-to")
 
     filters = []
     if args.filter:
         filters.append({'filter_pattern': args.filter, 'is_casesensitive': True, 'is_regex': False, 'is_reverse': False})
     
     requests = get_requests(args.service, filepath=args.logfile, filters=filters)
-    if requests:
-        for req in requests:
-            print(req)
+    if requests is not None:
+        requests = filter_requests_by_level(requests, args.service, args.log_level)
+        requests = filter_requests_by_time_range(requests, time_from, time_to)
+        if args.output_format == OUTPUT_FORMAT_JSON:
+            print(format_requests_as_json(requests))
+        elif args.output_format == OUTPUT_FORMAT_CSV:
+            print(format_requests_as_csv(requests), end='')
+        else:
+            for req in requests:
+                print(req)
 
