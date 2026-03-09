@@ -201,6 +201,14 @@ def filter_data(log_filter, data=None, filepath=None, is_casesensitive=True, is_
             if check_match(line, log_filter, is_regex, is_casesensitive, is_reverse):
                 return_data += line
         return return_data
+        try:
+            with open(filepath, 'r') as file_object:
+                for line in file_object:
+                    if check_match(line, log_filter, is_regex, is_casesensitive, is_reverse):
+                        return_data += line
+            return return_data
+        except (IOError, EnvironmentError) as e:
+            raise Exception(e.strerror)
     elif data:
         for line in data.splitlines():
             if check_match(line, log_filter, is_regex, is_casesensitive, is_reverse):
