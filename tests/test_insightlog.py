@@ -131,6 +131,12 @@ class TestInsightLog(TestCase):
         self.assertTrue('127.0.0.2' in csv_lines[2], "output_format#5")
         self.assertEqual(format_requests_as_csv([]), '', "output_format#6")
         self.assertEqual(json.loads(format_requests_as_json([])), [], "output_format#7")
+        self.assertTrue(check_match("abc123def", r"\d+", is_regex=True), "check_match_regex#1")
+        self.assertFalse(check_match("abc123def", r"^\d+", is_regex=True), "check_match_regex#2")
+        self.assertTrue(check_match("abcABCdef", r"abc", is_regex=True, is_casesensitive=False),
+                        "check_match_regex#3")
+        filtered_data = filter_data(r"\d+", data="prefix 42 suffix", is_regex=True)
+        self.assertEqual(filtered_data, "prefix 42 suffix\n", "check_match_regex#4")
 
     def test_get_web_requests(self):
         nginx_settings = get_service_settings('nginx')
