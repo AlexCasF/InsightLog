@@ -63,7 +63,7 @@ SERVICES_SWITCHER = {
     'auth': DEFAULT_AUTH
 }
 
-IPv4_REGEX = r'(\d+.\d+.\d+.\d+)'
+IPv4_REGEX = r'\b((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b'
 AUTH_USER_INVALID_USER = r'(?i)invalid\suser\s(\w+)\s'
 AUTH_PASS_INVALID_USER = r'(?i)failed\spassword\sfor\s(\w+)\s'
 LOG_LEVEL_INFO = 'info'
@@ -75,6 +75,7 @@ OUTPUT_FORMAT_TEXT = 'text'
 OUTPUT_FORMAT_JSON = 'json'
 OUTPUT_FORMAT_CSV = 'csv'
 OUTPUT_FORMAT_CHOICES = [OUTPUT_FORMAT_TEXT, OUTPUT_FORMAT_JSON, OUTPUT_FORMAT_CSV]
+
 
 
 # Validator functions
@@ -405,6 +406,13 @@ def get_requests(service, data=None, filepath=None, filters=None):
         filtered_data = apply_filters(filters, data=data, filepath=filepath)
     else:
         if filepath:
+            try:
+                with open(filepath, 'r') as f:
+                    filtered_data = f.read()
+            except (IOError, EnvironmentError) as e:
+                print("DEBUG: File error happened here")
+                print(e.strerror)
+                return []
             filtered_data = read_text_file(filepath)
             if filtered_data is None:
                 return None
