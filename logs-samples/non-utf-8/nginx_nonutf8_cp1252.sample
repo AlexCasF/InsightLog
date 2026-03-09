@@ -1,0 +1,2 @@
+127.0.0.3 - - [24/Apr/2016:06:28:37 +0000] "GET /docs HTTP/1.1" 200 800 "-" "Mozilla “Legacy”"
+127.0.0.4 - - [24/Apr/2016:06:29:37 +0000] "GET /price HTTP/1.1" 200 900 "http://example.com/eur" "cost-€-client"

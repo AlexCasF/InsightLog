@@ -1,5 +1,6 @@
 import re
 import calendar
+import chardet
 import csv
 import io
 import json
@@ -101,6 +102,38 @@ def is_valid_minute(minute):
     """Check if minute value is valid"""
     return (minute == '*') or (59 >= minute >= 0)
 
+# Helper function to check encoding of file before opening, instead of just open in UTF-8 by default
+def read_text_file(filepath):
+    try:
+        with open(filepath, "rb") as f:
+            raw_data = f.read()
+        if not raw_data:
+            return ""
+
+        # Use a deterministic decode chain to avoid brittle single-shot detection.
+        preferred_encodings = ["utf-8", "utf-8-sig"]
+        detected = chardet.detect(raw_data) or {}
+        detected_encoding = detected.get("encoding")
+        detected_confidence = detected.get("confidence") or 0.0
+
+        candidate_encodings = list(preferred_encodings)
+        if detected_encoding and detected_confidence >= 0.70:
+            candidate_encodings.append(detected_encoding)
+        candidate_encodings.extend(["cp1252", "latin-1"])
+
+        seen = set()
+        for encoding in candidate_encodings:
+            normalized = encoding.lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            try:
+                return raw_data.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return None
+    except (FileNotFoundError, OSError):
+        return None
 
 # Utility functions
 def get_service_settings(service_name):
@@ -160,15 +193,13 @@ def filter_data(log_filter, data=None, filepath=None, is_casesensitive=True, is_
     """Filter received data/file content and return the results"""
     return_data = ""
     if filepath:
-        try:
-            with open(filepath, 'r') as file_object:
-                for line in file_object:
-                    if check_match(line, log_filter, is_regex, is_casesensitive, is_reverse):
-                        return_data += line
-            return return_data
-        except (IOError, EnvironmentError) as e:
-            print(e.strerror)
+        file_data = read_text_file(filepath)
+        if file_data is None:
             return None
+        for line in file_data.splitlines(True):
+            if check_match(line, log_filter, is_regex, is_casesensitive, is_reverse):
+                return_data += line
+        return return_data
     elif data:
         for line in data.splitlines():
             if check_match(line, log_filter, is_regex, is_casesensitive, is_reverse):
@@ -332,16 +363,14 @@ def format_requests_as_csv(requests):
 def apply_filters(filters, data=None, filepath=None):
     """Apply all filters to data or file and return filtered results"""
     if filepath:
-        try:
-            with open(filepath, 'r') as file_object:
-                filtered_lines = []
-                for line in file_object:
-                    if check_all_matches(line, filters):
-                        filtered_lines.append(line)
-                return ''.join(filtered_lines)
-        except (IOError, EnvironmentError) as e:
-            print(e.strerror)
+        file_data = read_text_file(filepath)
+        if file_data is None:
             return None
+        filtered_lines = []
+        for line in file_data.splitlines(True):
+            if check_all_matches(line, filters):
+                filtered_lines.append(line)
+        return ''.join(filtered_lines)
     elif data:
         filtered_lines = []
         for line in data.splitlines():
@@ -376,11 +405,8 @@ def get_requests(service, data=None, filepath=None, filters=None):
         filtered_data = apply_filters(filters, data=data, filepath=filepath)
     else:
         if filepath:
-            try:
-                with open(filepath, 'r') as f:
-                    filtered_data = f.read()
-            except (IOError, EnvironmentError) as e:
-                print(e.strerror)
+            filtered_data = read_text_file(filepath)
+            if filtered_data is None:
                 return None
         else:
             filtered_data = data
