@@ -209,6 +209,22 @@ def get_auth_requests(data, pattern, date_pattern=None, date_keys=None):
         requests.append(data)
     return requests
 
+"""
+def analyze_auth_request(request_info):
+    # Analyze request info and returns main data (IP, invalid user, invalid password's user, is_preauth, is_closed)
+    ipv4 = re.findall(IPv4_REGEX, request_info)
+    is_preauth = '[preauth]' in request_info.lower()
+    invalid_user = re.findall(AUTH_USER_INVALID_USER, request_info)
+    invalid_pass_user = re.findall(AUTH_PASS_INVALID_USER, request_info)
+    is_closed = 'connection closed by ' in request_info.lower()
+    return {'IP': ipv4[0] if ipv4 else None,
+            'INVALID_USER': invalid_user[0] if invalid_user else None,
+            'INVALID_PASS_USER': invalid_pass_user[0] if invalid_pass_user else None,
+            'IS_PREAUTH': is_preauth,
+            'IS_CLOSED': is_closed}
+"""
+# regex contains capturing groups, so findall() returns tuples instead of the full IP string
+
 
 def analyze_auth_request(request_info):
     """Analyze request info and returns main data"""
