@@ -1,4 +1,6 @@
 import os
+import tempfile
+import json
 from unittest import TestCase
 from datetime import datetime
 from insightlog import *
@@ -51,6 +53,91 @@ class TestInsightLog(TestCase):
         self.assertEqual(len(data.split("\n")), 19, "filter_data#3")
         data = filter_data('120.25.229.167', filepath=file_name, is_reverse=True)
         self.assertFalse('120.25.229.167' in data, "filter_data#4")
+
+    def test_check_match_regex_search_behavior(self):
+        self.assertTrue(check_match("abc123def", r"\d+", is_regex=True), "check_match#1")
+        self.assertFalse(check_match("abc123def", r"^\d+", is_regex=True), "check_match#2")
+        self.assertTrue(check_match("abcABCdef", r"abc", is_regex=True, is_casesensitive=False), "check_match#3")
+        filtered_data = filter_data(r"\d+", data="prefix 42 suffix", is_regex=True)
+        self.assertEqual(filtered_data, "prefix 42 suffix\n", "check_match#4")
+
+    def test_log_level_helpers(self):
+        web_info = {'CODE': '200'}
+        web_warning = {'CODE': '404'}
+        web_error = {'CODE': '503'}
+        web_invalid = {'CODE': 'invalid'}
+
+        self.assertEqual(get_log_level('nginx', web_info), LOG_LEVEL_INFO, "log_level#1")
+        self.assertEqual(get_log_level('apache2', web_warning), LOG_LEVEL_WARNING, "log_level#2")
+        self.assertEqual(get_log_level('nginx', web_error), LOG_LEVEL_ERROR, "log_level#3")
+        self.assertEqual(get_log_level('nginx', web_invalid), LOG_LEVEL_INFO, "log_level#4")
+
+        auth_warning = {'IS_PREAUTH': True}
+        auth_error = {'INVALID_PASS_USER': 'root'}
+        auth_info = {'IS_PREAUTH': False, 'INVALID_USER': None, 'INVALID_PASS_USER': None, 'IS_CLOSED': False}
+
+        self.assertEqual(get_log_level('auth', auth_warning), LOG_LEVEL_WARNING, "log_level#5")
+        self.assertEqual(get_log_level('auth', auth_error), LOG_LEVEL_ERROR, "log_level#6")
+        self.assertEqual(get_log_level('auth', auth_info), LOG_LEVEL_INFO, "log_level#7")
+
+        mixed_requests = [
+            {'CODE': '200', 'ID': 1},
+            {'CODE': '404', 'ID': 2},
+            {'CODE': '503', 'ID': 3},
+        ]
+        warning_only = filter_requests_by_level(mixed_requests, 'nginx', LOG_LEVEL_WARNING)
+        self.assertEqual(len(warning_only), 1, "log_level#8")
+        self.assertEqual(warning_only[0]['ID'], 2, "log_level#9")
+        no_filter = filter_requests_by_level(mixed_requests, 'nginx', None)
+        self.assertEqual(len(no_filter), 3, "log_level#10")
+
+    def test_time_range_helpers(self):
+        parsed_dt = parse_datetime_value('2016-04-24 06:26:37')
+        self.assertEqual(parsed_dt.year, 2016, "time_range#1")
+        self.assertEqual(parsed_dt.minute, 26, "time_range#2")
+        self.assertRaises(ValueError, parse_datetime_value, '2016-04-24')
+
+        requests = [
+            {'DATETIME': '2016-04-24 06:26:37', 'ID': 1},
+            {'DATETIME': '2016-04-24 06:27:37', 'ID': 2},
+            {'DATETIME': '2016-04-24 06:28:37', 'ID': 3},
+            {'DATETIME': 'bad-date', 'ID': 4},
+        ]
+        time_from = parse_datetime_value('2016-04-24 06:27:37')
+        time_to = parse_datetime_value('2016-04-24 06:28:37')
+        filtered = filter_requests_by_time_range(requests, time_from, time_to)
+        self.assertEqual(len(filtered), 2, "time_range#3")
+        self.assertEqual(filtered[0]['ID'], 2, "time_range#4")
+        self.assertEqual(filtered[1]['ID'], 3, "time_range#5")
+
+        only_from = filter_requests_by_time_range(requests, time_from=time_from)
+        self.assertEqual(len(only_from), 2, "time_range#6")
+        self.assertRaises(ValueError, filter_requests_by_time_range,
+                          requests, time_to, time_from)
+
+    def test_output_format_helpers(self):
+        requests = [
+            {'DATETIME': '2016-04-24 06:26:37', 'IP': '127.0.0.1', 'CODE': '200'},
+            {'DATETIME': '2016-04-24 06:27:37', 'IP': '127.0.0.2', 'CODE': '404'},
+        ]
+        json_output = format_requests_as_json(requests)
+        parsed_json = json.loads(json_output)
+        self.assertEqual(len(parsed_json), 2, "output_format#1")
+        self.assertEqual(parsed_json[1]['CODE'], '404', "output_format#2")
+
+        csv_output = format_requests_as_csv(requests)
+        csv_lines = [line for line in csv_output.splitlines() if line]
+        self.assertEqual(len(csv_lines), 3, "output_format#3")
+        self.assertTrue('DATETIME' in csv_lines[0], "output_format#4")
+        self.assertTrue('127.0.0.2' in csv_lines[2], "output_format#5")
+        self.assertEqual(format_requests_as_csv([]), '', "output_format#6")
+        self.assertEqual(json.loads(format_requests_as_json([])), [], "output_format#7")
+        self.assertTrue(check_match("abc123def", r"\d+", is_regex=True), "check_match_regex#1")
+        self.assertFalse(check_match("abc123def", r"^\d+", is_regex=True), "check_match_regex#2")
+        self.assertTrue(check_match("abcABCdef", r"abc", is_regex=True, is_casesensitive=False),
+                        "check_match_regex#3")
+        filtered_data = filter_data(r"\d+", data="prefix 42 suffix", is_regex=True)
+        self.assertEqual(filtered_data, "prefix 42 suffix\n", "check_match_regex#4")
 
     def test_get_web_requests(self):
         nginx_settings = get_service_settings('nginx')
@@ -109,5 +196,53 @@ class TestInsightLog(TestCase):
         ]
         requests = get_requests('nginx', filepath=nginx_logfile, filters=nginx_filters)
         self.assertEqual(len(requests), 2, "get_requests#2")
+
+    def test_read_text_file_non_utf8_fallbacks(self):
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        latin1_file = os.path.join(base_dir, 'logs-samples/non-utf-8/nginx_nonutf8_latin1.sample')
+        cp1252_file = os.path.join(base_dir, 'logs-samples/non-utf-8/nginx_nonutf8_cp1252.sample')
+        auth_cp1252_file = os.path.join(base_dir, 'logs-samples/non-utf-8/auth_nonutf8_cp1252.sample')
+
+        latin1_data = read_text_file(latin1_file)
+        self.assertTrue(latin1_data is not None, "read_text_file_non_utf8#1")
+        self.assertTrue('café-browser' in latin1_data, "read_text_file_non_utf8#2")
+        self.assertTrue('agent-ñ' in latin1_data, "read_text_file_non_utf8#3")
+
+        cp1252_data = read_text_file(cp1252_file)
+        self.assertTrue(cp1252_data is not None, "read_text_file_non_utf8#4")
+        self.assertTrue('Mozilla “Legacy”' in cp1252_data, "read_text_file_non_utf8#5")
+        self.assertTrue('cost-€-client' in cp1252_data, "read_text_file_non_utf8#6")
+
+        auth_cp1252_data = read_text_file(auth_cp1252_file)
+        self.assertTrue(auth_cp1252_data is not None, "read_text_file_non_utf8#7")
+        self.assertTrue('– legacy' in auth_cp1252_data, "read_text_file_non_utf8#8")
+        self.assertTrue('“old client”' in auth_cp1252_data, "read_text_file_non_utf8#9")
+
+    def test_get_requests_with_utf8_sig_and_cp1252(self):
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cp1252_file = os.path.join(base_dir, 'logs-samples/non-utf-8/nginx_nonutf8_cp1252.sample')
+
+        cp1252_filters = [
+            {'filter_pattern': '127.0.0.3', 'is_casesensitive': True, 'is_regex': False, 'is_reverse': False}
+        ]
+        cp1252_requests = get_requests('nginx', filepath=cp1252_file, filters=cp1252_filters)
+        self.assertEqual(len(cp1252_requests), 1, "get_requests_non_utf8#1")
+        self.assertEqual(cp1252_requests[0]['USERAGENT'], 'Mozilla “Legacy”', "get_requests_non_utf8#2")
+
+        with tempfile.NamedTemporaryFile('wb', suffix='.sample', delete=False) as tmp_file:
+            tmp_file.write(
+                '127.0.0.9 - - [24/Apr/2016:06:30:37 +0000] "GET / HTTP/1.1" 200 612 "-" "utf8sig-café"\n'
+                .encode('utf-8-sig')
+            )
+            utf8sig_path = tmp_file.name
+        try:
+            utf8sig_filters = [
+                {'filter_pattern': '127.0.0.9', 'is_casesensitive': True, 'is_regex': False, 'is_reverse': False}
+            ]
+            utf8sig_requests = get_requests('nginx', filepath=utf8sig_path, filters=utf8sig_filters)
+            self.assertEqual(len(utf8sig_requests), 1, "get_requests_non_utf8#3")
+            self.assertEqual(utf8sig_requests[0]['USERAGENT'], 'utf8sig-café', "get_requests_non_utf8#4")
+        finally:
+            os.remove(utf8sig_path)
 
 # TODO: Add more tests for edge cases and error handling
